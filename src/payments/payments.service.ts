@@ -1,12 +1,20 @@
-import { Injectable } from '@nestjs/common';
-import { envs } from 'src/config';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { envs, NATS_SERVICE } from 'src/config';
 import Stripe from 'stripe';
 import { PaymentSessionDto } from './dto/payment-session.dto';
 import { Request, Response } from 'express';
+import { ClientProxy } from '@nestjs/microservices';
 
 @Injectable()
 export class PaymentsService {
+
+    private readonly logger = new Logger('payment.service');
     private readonly stripe = new Stripe(envs.stripeSecret)
+
+    constructor(
+        @Inject(NATS_SERVICE)
+        private readonly client: ClientProxy
+    ) { }
 
 
     async createPaymentSession(paymentSessionDto: PaymentSessionDto) {
@@ -42,7 +50,12 @@ export class PaymentsService {
             cancel_url: envs.stripe_cancel_url,
         });
 
-        return session;
+        // return session;
+        return {
+            cancelUrl: session.cancel_url,
+            successUrl: session.success_url,
+            url: session.url,
+        }
     }
 
 
@@ -52,10 +65,6 @@ export class PaymentsService {
 
         let event: Stripe.Event;
 
-        // testing
-        // const endpointSecret = 'whsec_e1d719505abe6ba938b4675039c86e9db9897a990ba9b0fe5e1348d8c946dc2a';
-
-        // Real
         const endpointSecret = envs.stripe_endpoint_secret;
 
         try {
@@ -73,13 +82,17 @@ export class PaymentsService {
 
         switch (event.type) {
 
+
             case 'charge.succeeded':
                 const chargeSucceeded = event.data.object;
-                // TODO: call microservice (orders-ms)
-                console.log({
-                    metadata: chargeSucceeded.metadata,
-                    orderId: chargeSucceeded.metadata.orderId
-                });
+                const payload = {
+                    stripePaymentId: chargeSucceeded.id,
+                    orderId: chargeSucceeded.metadata.orderId,
+                    receiptUrl: chargeSucceeded.receipt_url,
+                }
+                // this.logger.log({ payload });
+
+                this.client.emit('payment.succeeded', payload);
                 break;
 
             default:
