@@ -74,8 +74,8 @@ export class PaymentsService {
                 endpointSecret
             );
         } catch (err) {
-            console.log(`⚠️  Webhook signature verification failed.`, err.message);
-            return res.sendStatus(400);
+            const errorMessage = `⚠️  Webhook signature verification failed. ${err.message}`;
+            return res.status(400).json({ error: errorMessage });
         }
 
         console.log({ event });
